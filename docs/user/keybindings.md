@@ -39,8 +39,11 @@ or “Copy Number”. They copy the selected PR and leave terminal input alone.
 
 ## Preview browser
 
-While the preview has focus, use `mod+l` to select the URL, `mod+t` to open a tab,
-and `mod+w` to close it. `ctrl+tab` and `ctrl+shift+tab` cycle browser tabs.
+In a desktop thread, use `mod+t` to open a new preview tab from the chat, composer,
+terminal, or preview. This also opens the preview panel when it is closed.
+
+While the preview has focus, use `mod+l` to select the URL and `mod+w` to close
+the tab. `ctrl+tab` and `ctrl+shift+tab` cycle browser tabs.
 Use `mod+[` / `mod+]` to go back / forward, `mod+r` to refresh, and `mod+shift+r`
 to reload without cache. Zoom with `mod++`, `mod+-`, and `mod+0`.
 

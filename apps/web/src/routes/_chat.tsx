@@ -17,6 +17,7 @@ import type { PreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
+import { registerPreviewNewTabShortcut } from "../lib/previewNewTabShortcut";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isEditableFocused } from "../lib/editableFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
@@ -30,7 +31,6 @@ import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
 
 const PREVIEW_SHORTCUT_ACTIONS: Partial<Record<KeybindingCommand, PreviewAction>> = {
-  "preview.newTab": "new-tab",
   "preview.closeTab": "close-tab",
   "preview.nextTab": "next-tab",
   "preview.previousTab": "previous-tab",
@@ -78,17 +78,21 @@ function ChatRouteGlobalShortcuts() {
       : false,
   );
   useEffect(() => {
+    const getShortcutContext = (event: KeyboardEvent) => ({
+      terminalFocus: isTerminalFocused(),
+      terminalOpen,
+      previewFocus: isPreviewFocused(),
+      previewOpen,
+      editableFocus: isEditableFocused(event.target),
+      modelPickerOpen: isModelPickerOpen(),
+    });
+    const removeNewTabShortcut = routeThreadRef
+      ? registerPreviewNewTabShortcut(keybindings, getShortcutContext)
+      : undefined;
     const onWindowKeyDown = (event: KeyboardEvent) => {
       if (event.defaultPrevented) return;
       const command = resolveShortcutCommand(event, keybindings, {
-        context: {
-          terminalFocus: isTerminalFocused(),
-          terminalOpen,
-          previewFocus: isPreviewFocused(),
-          previewOpen,
-          editableFocus: isEditableFocused(event.target),
-          modelPickerOpen: isModelPickerOpen(),
-        },
+        context: getShortcutContext(event),
       });
 
       if (isCommandPaletteOpen()) {
@@ -163,7 +167,7 @@ function ChatRouteGlobalShortcuts() {
       if (previewAction) {
         event.preventDefault();
         event.stopPropagation();
-        if (event.repeat && (command === "preview.newTab" || command === "preview.closeTab")) {
+        if (event.repeat && command === "preview.closeTab") {
           return;
         }
         dispatchPreviewAction(previewAction);
@@ -173,6 +177,7 @@ function ChatRouteGlobalShortcuts() {
 
     window.addEventListener("keydown", onWindowKeyDown);
     return () => {
+      removeNewTabShortcut?.();
       window.removeEventListener("keydown", onWindowKeyDown);
     };
   }, [

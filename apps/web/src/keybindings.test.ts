@@ -1048,7 +1048,7 @@ describe.each(["MacIntel", "Linux", "Win32"])("preview shortcuts on %s", (platfo
       event({ key: "+", code: "Equal", metaKey: true, shiftKey: true }),
       "preview.zoomIn",
     ],
-  ] as const)("resolves %s only while preview owns focus", (_label, keyEvent, command) => {
+  ] as const)("resolves %s in its desktop focus scope", (_label, keyEvent, command) => {
     const platformEvent =
       platform === "MacIntel"
         ? keyEvent
@@ -1056,11 +1056,12 @@ describe.each(["MacIntel", "Linux", "Win32"])("preview shortcuts on %s", (platfo
     assert.strictEqual(
       resolveShortcutCommand(platformEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform,
-        context: { previewFocus: true },
+        context: { previewFocus: true, isDesktop: true },
       }),
       command,
     );
     const outsidePreview: Partial<Record<KeybindingCommand, KeybindingCommand>> = {
+      "preview.newTab": "preview.newTab",
       "preview.closeTab": "rightPanel.close",
       "preview.goBack": "navigation.back",
       "preview.goForward": "navigation.forward",
@@ -1068,9 +1069,18 @@ describe.each(["MacIntel", "Linux", "Win32"])("preview shortcuts on %s", (platfo
     assert.strictEqual(
       resolveShortcutCommand(platformEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform,
-        context: { previewFocus: false },
+        context: { previewFocus: false, isDesktop: true },
       }),
       outsidePreview[command] ?? null,
+    );
+  });
+  it("leaves the web browser's new-tab shortcut alone", () => {
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "t", metaKey: platform === "MacIntel", ctrlKey: platform !== "MacIntel" }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform, context: { isDesktop: false, isWeb: true } },
+      ),
     );
   });
 });

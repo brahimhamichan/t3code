@@ -31,7 +31,7 @@ export const DEFAULT_KEYBINDINGS: ReadonlyArray<KeybindingRule> = [
   { key: "mod+w", command: "rightPanel.close", when: "!terminalFocus" },
   { key: "mod+d", command: "diff.toggle", when: "!terminalFocus" },
   { key: "mod+shift+j", command: "preview.toggle" },
-  { key: "mod+t", command: "preview.newTab", when: "previewFocus" },
+  { key: "mod+t", command: "preview.newTab", when: "isDesktop" },
   { key: "mod+w", command: "preview.closeTab", when: "previewFocus" },
   { key: "ctrl+tab", command: "preview.nextTab", when: "previewFocus" },
   { key: "ctrl+shift+tab", command: "preview.previousTab", when: "previewFocus" },
