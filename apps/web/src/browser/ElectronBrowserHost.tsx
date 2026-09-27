@@ -2,6 +2,9 @@
 
 import { parseScopedThreadKey } from "@t3tools/client-runtime/environment";
 import { FILL_PREVIEW_VIEWPORT } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { primaryServerKeybindingsAtom } from "~/state/server";
+import { dispatchPreviewShortcut } from "~/lib/previewFocus";
 import { useEffect, useMemo } from "react";
 
 import { isElectron } from "~/env";
@@ -15,6 +18,11 @@ import { previewRuntimeTabId } from "./previewRuntimeTabId";
 
 export function ElectronBrowserHost() {
   const { resolvedTheme } = useTheme();
+  const keybindings = useAtomValue(primaryServerKeybindingsAtom);
+  useEffect(() => {
+    void window.desktopBridge?.preview?.setKeybindings?.(keybindings).catch(console.error);
+  }, [keybindings]);
+  useEffect(() => window.desktopBridge?.preview?.onShortcut?.(dispatchPreviewShortcut), []);
   const previewByThreadKey = useActivePreviewSessions();
   const sessions = useMemo(
     () =>
