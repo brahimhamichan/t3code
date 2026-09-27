@@ -415,7 +415,7 @@ describe("PreviewManager", () => {
               beforeInput({ preventDefault } as never, input as never);
               return preventDefault;
             };
-            for (const key of ["l", "r", "=", "-", "0", "k", "j", "b"]) {
+            for (const key of ["l", "t", "w", "r", "[", "]", "=", "+", "-", "0", "k", "j", "b"]) {
               send.mockClear();
               expect(press({ key })).toHaveBeenCalledOnce();
               expect(send).toHaveBeenCalledWith(
