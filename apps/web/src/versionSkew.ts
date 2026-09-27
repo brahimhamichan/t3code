@@ -3,11 +3,12 @@ import type { ServerUpdateState } from "@t3tools/client-runtime/state/server";
 import { compareSemverVersions, parseSemver } from "@t3tools/shared/semver";
 import * as Schema from "effect/Schema";
 
-import { APP_VERSION } from "./branding";
+import { APP_SERVER_VERSION, APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
 export interface VersionMismatch {
   readonly clientVersion: string;
+  readonly updateTargetVersion: string;
   readonly serverVersion: string;
   readonly hint: string;
 }
@@ -44,41 +45,51 @@ function versionCore(version: string): string {
 
 /**
  * The skew a user can act on: the connected server runs an older T3 Code than
- * this client, so the server is the side that needs updating.
+ * this client's bundled server version, so the server is the side that needs
+ * updating. A custom client build can keep its own display version while
+ * declaring the published server version it can update to.
  *
  * Two nightly builds compare their full versions, including the date and run.
  * Other combinations compare their core `major.minor.patch` only, so a stable
  * build and a nightly build with the same core do not cause an update warning.
- * A server ahead of the client does not need an update. Versions that do not
- * parse as semver fall back to plain string inequality.
+ * A server at the client build or ahead of the update target does not need an
+ * update. Versions that do not parse as semver fall back to plain string inequality.
  */
 export function resolveVersionMismatch(
   serverVersion: string | null | undefined,
 ): VersionMismatch | null {
   const normalizedClientVersion = normalizeVersion(APP_VERSION);
+  const normalizedUpdateTargetVersion =
+    normalizeVersion(APP_SERVER_VERSION) ?? normalizedClientVersion;
   const normalizedServerVersion = normalizeVersion(serverVersion);
-  if (!normalizedClientVersion || !normalizedServerVersion) {
+  if (!normalizedClientVersion || !normalizedUpdateTargetVersion || !normalizedServerVersion) {
     return null;
   }
 
-  const clientCore = versionCore(normalizedClientVersion);
+  // A desktop server can report the custom client build version itself.
+  if (normalizedServerVersion === normalizedClientVersion) {
+    return null;
+  }
+
+  const updateTargetCore = versionCore(normalizedUpdateTargetVersion);
   const serverCore = versionCore(normalizedServerVersion);
   const compareNightlyBuilds =
-    parseSemver(normalizedClientVersion)?.prerelease[0] === "nightly" &&
+    parseSemver(normalizedUpdateTargetVersion)?.prerelease[0] === "nightly" &&
     parseSemver(normalizedServerVersion)?.prerelease[0] === "nightly";
   const serverIsBehind =
-    parseSemver(clientCore) && parseSemver(serverCore)
+    parseSemver(updateTargetCore) && parseSemver(serverCore)
       ? compareSemverVersions(
           compareNightlyBuilds ? normalizedServerVersion : serverCore,
-          compareNightlyBuilds ? normalizedClientVersion : clientCore,
+          compareNightlyBuilds ? normalizedUpdateTargetVersion : updateTargetCore,
         ) < 0
-      : normalizedServerVersion !== normalizedClientVersion;
+      : normalizedServerVersion !== normalizedUpdateTargetVersion;
   if (!serverIsBehind) {
     return null;
   }
 
   return {
     clientVersion: normalizedClientVersion,
+    updateTargetVersion: normalizedUpdateTargetVersion,
     serverVersion: normalizedServerVersion,
     hint: "Version mismatch. Try syncing the client and server to the same T3 Code version.",
   };

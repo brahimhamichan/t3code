@@ -2796,7 +2796,7 @@ export default function ChatView(props: ChatViewProps) {
             selfUpdate={versionMismatchSelfUpdate}
             desktopAppUpdate={versionMismatchDesktopAppUpdate}
             threadContinuation={versionMismatchThreadContinuation}
-            targetVersion={versionMismatch.clientVersion}
+            targetVersion={versionMismatch.updateTargetVersion}
             label={updateFailed ? "Retry" : "Update"}
             variant="ghost"
           />
