@@ -1,4 +1,5 @@
 import * as Schema from "effect/Schema";
+import type { ResolvedKeybindingsConfig } from "./keybindings.ts";
 
 import {
   PreviewAutomationClickInput,
@@ -1258,7 +1259,24 @@ export interface DesktopBridge {
 /** Renderer callback invoked by Electron with a fresh user gesture before display-media capture. */
 export const DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER = "__t3DesktopPreviewRecordingCapture";
 
+/** Keyboard input forwarded from a focused preview guest to the app renderer. */
+export interface DesktopPreviewShortcut {
+  readonly tabId: string;
+  readonly type: "keydown" | "keyup";
+  readonly key: string;
+  readonly code: string;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+  readonly repeat: boolean;
+  readonly isComposing: boolean;
+  readonly altGraphKey: boolean;
+}
+
 export interface DesktopPreviewBridge {
+  setKeybindings?: (keybindings: ResolvedKeybindingsConfig) => Promise<void>;
+  onShortcut?: (listener: (input: DesktopPreviewShortcut) => void) => () => void;
   createTab: (tabId: string, defaults?: DesktopPreviewTabDefaults) => Promise<void>;
   closeTab: (tabId: string) => Promise<void>;
   registerWebview: (tabId: string, webContentsId: number) => Promise<void>;

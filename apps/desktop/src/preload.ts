@@ -1,6 +1,7 @@
 import type {
   DesktopBridge,
   DesktopPreviewPointerEvent,
+  DesktopPreviewShortcut,
   DesktopPreviewRecordingInputEvent,
   DesktopPreviewRecordingFrame,
   DesktopPreviewTabState,
@@ -282,6 +283,15 @@ contextBridge.exposeInMainWorld("desktopBridge", {
     },
   },
   preview: {
+    setKeybindings: (keybindings) =>
+      ipcRenderer.invoke(IpcChannels.PREVIEW_SET_KEYBINDINGS_CHANNEL, keybindings),
+    onShortcut: (listener) => {
+      const wrappedListener = (_event: Electron.IpcRendererEvent, input: DesktopPreviewShortcut) =>
+        listener(input);
+      ipcRenderer.on(IpcChannels.PREVIEW_SHORTCUT_CHANNEL, wrappedListener);
+      return () =>
+        ipcRenderer.removeListener(IpcChannels.PREVIEW_SHORTCUT_CHANNEL, wrappedListener);
+    },
     createTab: (tabId, defaults) =>
       ipcRenderer.invoke(IpcChannels.PREVIEW_CREATE_TAB_CHANNEL, {
         tabId,

@@ -7,7 +7,14 @@
  */
 export type PreviewAction =
   | "toggle-panel"
+  | "new-tab"
+  | "close-tab"
+  | "next-tab"
+  | "previous-tab"
+  | "go-back"
+  | "go-forward"
   | "refresh"
+  | "hard-refresh"
   | "focus-url"
   | "zoom-in"
   | "zoom-out"

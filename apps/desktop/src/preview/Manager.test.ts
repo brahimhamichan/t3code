@@ -1,10 +1,15 @@
 import * as NodeVM from "node:vm";
 import { it as effectIt } from "@effect/vitest";
+import {
+  compileResolvedKeybindingsConfig,
+  DEFAULT_RESOLVED_KEYBINDINGS,
+} from "@t3tools/shared/keybindings";
 import { DESKTOP_PREVIEW_RECORDING_CAPTURE_TRIGGER } from "@t3tools/contracts";
 import type {
   DesktopPreviewRecordingFrame,
   DesktopPreviewRecordingInputEvent,
 } from "@t3tools/contracts";
+import { MENU_ACTION_CHANNEL, PREVIEW_SHORTCUT_CHANNEL } from "../ipc/channels.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
@@ -46,28 +51,6 @@ describe("recordingFileExtension", () => {
     expect(PreviewManager.recordingFileExtension("video/mp4;codecs=avc1.640028")).toBe("mp4");
     expect(PreviewManager.recordingFileExtension("video/webm;codecs=vp9")).toBe("webm");
     expect(PreviewManager.recordingFileExtension("video/x-matroska")).toBe("matroska");
-  });
-});
-
-describe("isPreviewRefreshShortcut", () => {
-  const input = (overrides: Partial<Electron.Input> = {}) =>
-    ({
-      type: "keyDown",
-      key: "r",
-      meta: true,
-      control: false,
-      shift: false,
-      alt: false,
-      ...overrides,
-    }) as Electron.Input;
-
-  it("recognizes the platform refresh chord without matching modified variants", () => {
-    expect(PreviewManager.isPreviewRefreshShortcut(input())).toBe(true);
-    expect(PreviewManager.isPreviewRefreshShortcut(input({ meta: false, control: true }))).toBe(
-      true,
-    );
-    expect(PreviewManager.isPreviewRefreshShortcut(input({ shift: true }))).toBe(false);
-    expect(PreviewManager.isPreviewRefreshShortcut(input({ type: "keyUp" }))).toBe(false);
   });
 });
 
@@ -269,7 +252,6 @@ const layer = PreviewManager.layer.pipe(
   Layer.provideMerge(environmentLayer),
   Layer.provideMerge(fileSystemLayer),
   Layer.provideMerge(Path.layer),
-  Layer.provideMerge(Layer.succeed(HostProcessPlatform, "darwin")),
 );
 const encodePreviewManagerError = Schema.encodeSync(PreviewManager.PreviewManagerError);
 
@@ -277,11 +259,15 @@ const withManager = <A>(
   use: (
     manager: PreviewManager.PreviewManager["Service"],
   ) => Effect.Effect<A, PreviewManager.PreviewManagerError, Scope.Scope>,
+  platform: NodeJS.Platform = "darwin",
 ) =>
   Effect.gen(function* () {
     const manager = yield* PreviewManager.PreviewManager;
     return yield* use(manager);
-  }).pipe(Effect.provide(layer), Effect.scoped);
+  }).pipe(
+    Effect.provide(layer.pipe(Layer.provideMerge(Layer.succeed(HostProcessPlatform, platform)))),
+    Effect.scoped,
+  );
 
 interface TestCapturedPreviewImage {
   readonly toJPEG: () => Buffer;
@@ -555,64 +541,142 @@ describe("PreviewManager", () => {
     webviewSend.mockClear();
   });
 
-  effectIt.effect("keeps preview shortcuts out of the host window", () =>
-    withManager((manager) =>
-      Effect.gen(function* () {
-        const preview = makeFaviconWebContents();
-        const sendInputEvent = vi.fn();
-        const hostWebContents = { sendInputEvent };
-        Object.assign(preview.webContents, { hostWebContents });
-        fromId.mockReturnValue(preview.webContents);
-        getFocusedWebContents.mockReturnValue(preview.webContents as never);
-        yield* manager.setMainWindow({
-          isDestroyed: () => false,
-          once: vi.fn(),
-          webContents: hostWebContents,
-        } as never);
-        yield* manager.createTab("tab_keys");
-        yield* manager.registerWebview("tab_keys", 42);
+  for (const platform of ["darwin", "linux", "win32"] as const) {
+    effectIt.effect(`forwards configured preview shortcuts synchronously on ${platform}`, () =>
+      withManager(
+        (manager) =>
+          Effect.gen(function* () {
+            const preview = makeFaviconWebContents();
+            fromId.mockReturnValue(preview.webContents);
+            yield* manager.createTab("shortcut-tab");
+            yield* manager.registerWebview("shortcut-tab", 42);
+            const send = vi.fn();
+            yield* manager.setMainWindow({
+              isDestroyed: () => false,
+              once: vi.fn(),
+              webContents: { send },
+            } as never);
 
-        expect(
-          (preview.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
-        ).toHaveBeenCalledWith(true);
-        const beforeInput = preview.listeners.get("before-input-event")!;
-        for (const control of [false, true]) {
-          for (const key of ["k", ",", "w", "j", "q", "+"]) {
-            for (const type of ["keyDown", "keyUp"]) {
+            const beforeInput = preview.listeners.get("before-input-event")!;
+            const press = (overrides: Partial<Electron.Input> = {}) => {
+              const input = {
+                type: "keyDown",
+                key: "l",
+                code: "KeyL",
+                meta: platform === "darwin",
+                control: platform !== "darwin",
+                shift: false,
+                alt: false,
+                isAutoRepeat: false,
+                isComposing: false,
+                ...overrides,
+              };
               const preventDefault = vi.fn();
-              beforeInput(
-                { preventDefault } as never,
-                { type, key, meta: !control, control, shift: key === "j", alt: false } as never,
-              );
-              yield* Effect.yieldNow;
-              expect(preventDefault).not.toHaveBeenCalled();
-              expect(
-                (preview.webContents as Electron.WebContents).setIgnoreMenuShortcuts,
-              ).toHaveBeenLastCalledWith(true);
-            }
-          }
-        }
-        expect(sendInputEvent).not.toHaveBeenCalled();
+              beforeInput({ preventDefault } as never, input as never);
+              return preventDefault;
+            };
 
-        const preventDefault = vi.fn();
-        beforeInput(
-          { preventDefault } as never,
-          {
-            type: "keyDown",
-            key: "r",
-            meta: true,
-            control: false,
-            shift: false,
-            alt: false,
-          } as never,
-        );
-        yield* Effect.yieldNow;
-        expect(preventDefault).toHaveBeenCalledOnce();
-        expect(preview.reload).toHaveBeenCalledOnce();
-        expect(sendInputEvent).not.toHaveBeenCalled();
-      }),
-    ),
-  );
+            for (const [key, code, shift] of [
+              ["l", "KeyL", false],
+              ["t", "KeyT", false],
+              ["w", "KeyW", false],
+              ["[", "BracketLeft", false],
+              ["]", "BracketRight", false],
+              ["+", "Equal", true],
+              ["r", "KeyR", false],
+              ["=", "Equal", false],
+              ["-", "Minus", false],
+              ["0", "Digit0", false],
+              ["k", "KeyK", false],
+              ["j", "KeyJ", true],
+              ["b", "KeyB", false],
+            ] as const) {
+              send.mockClear();
+              expect(press({ key, code, shift })).toHaveBeenCalledOnce();
+              expect(send).toHaveBeenCalledWith(
+                PREVIEW_SHORTCUT_CHANNEL,
+                expect.objectContaining({
+                  tabId: "shortcut-tab",
+                  key,
+                  code,
+                  type: "keydown",
+                  metaKey: platform === "darwin",
+                  ctrlKey: platform !== "darwin",
+                  shiftKey: shift,
+                }),
+              );
+            }
+
+            for (const overrides of [
+              { key: "c", code: "KeyC" },
+              { key: "v", code: "KeyV" },
+              { key: "a", code: "KeyA" },
+              { key: "x", code: "KeyX" },
+              { key: "z", code: "KeyZ" },
+              { key: "q", code: "KeyQ" },
+              { key: "l", alt: true },
+              { key: "l", isComposing: true },
+            ]) {
+              send.mockClear();
+              expect(press(overrides)).not.toHaveBeenCalled();
+              expect(send).not.toHaveBeenCalled();
+            }
+
+            yield* manager.setKeybindings(
+              compileResolvedKeybindingsConfig([
+                { key: "mod+alt+y", command: "preview.focusUrl", when: "previewFocus" },
+                { key: "mod+u", command: "preview.refresh", when: "previewFocus" },
+              ]),
+            );
+            send.mockClear();
+            expect(press()).not.toHaveBeenCalled();
+            expect(press({ key: "r" })).not.toHaveBeenCalled();
+            expect(preview.reload).not.toHaveBeenCalled();
+            expect(send).not.toHaveBeenCalled();
+            expect(
+              press({ key: "¥", code: "KeyY", alt: true, isAutoRepeat: true }),
+            ).toHaveBeenCalledOnce();
+            expect(send).toHaveBeenLastCalledWith(
+              PREVIEW_SHORTCUT_CHANNEL,
+              expect.objectContaining({
+                key: "¥",
+                code: "KeyY",
+                repeat: true,
+                altKey: true,
+              }),
+            );
+            if (platform !== "darwin") {
+              press({ key: "AltGraph", code: "AltRight", alt: true });
+              send.mockClear();
+              expect(press({ key: "¥", code: "KeyY", alt: true })).not.toHaveBeenCalled();
+              expect(send).not.toHaveBeenCalled();
+              preview.listeners.get("blur")!();
+              expect(press({ key: "¥", code: "KeyY", alt: true })).toHaveBeenCalledOnce();
+            }
+            expect(press({ key: "u", code: "KeyU" })).toHaveBeenCalledOnce();
+            send.mockClear();
+            expect(
+              press({
+                key: "Meta",
+                code: "MetaLeft",
+                type: "keyUp",
+                meta: false,
+                control: false,
+              }),
+            ).not.toHaveBeenCalled();
+            expect(send).toHaveBeenCalledWith(
+              PREVIEW_SHORTCUT_CHANNEL,
+              expect.objectContaining({ type: "keyup", metaKey: false }),
+            );
+            send.mockClear();
+            expect(press({ key: ",", code: "Comma" })).toHaveBeenCalledOnce();
+            expect(send).toHaveBeenCalledWith(MENU_ACTION_CHANNEL, "open-settings");
+            yield* manager.setKeybindings(DEFAULT_RESOLVED_KEYBINDINGS);
+          }),
+        platform,
+      ),
+    );
+  }
 
   effectIt.effect("preserves focused browser editing in tabs and sign-in popups", () =>
     withManager((manager) =>

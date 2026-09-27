@@ -37,6 +37,16 @@ to copy its URL and `mod+shift+k` to copy its number with a `#` prefix.
 Both shortcuts can be changed in Settings. Search for “Copy Link or Thread ID”
 or “Copy Number”. They copy the selected PR and leave terminal input alone.
 
+## Preview browser
+
+In a desktop thread, use `mod+t` to open a new preview tab from the chat, composer,
+terminal, or preview. This also opens the preview panel when it is closed.
+
+While the preview has focus, use `mod+l` to select the URL and `mod+w` to close
+the tab. `ctrl+tab` and `ctrl+shift+tab` cycle browser tabs.
+Use `mod+[` / `mod+]` to go back / forward, `mod+r` to refresh, and `mod+shift+r`
+to reload without cache. Zoom with `mod++`, `mod+-`, and `mod+0`.
+
 ## iPad
 
 With a hardware keyboard, use `Cmd+1` through `Cmd+9` to open the first nine

@@ -16,6 +16,8 @@ import type {
   DesktopPreviewColorScheme,
   DesktopPreviewFavicon,
   DesktopPreviewPointerEvent,
+  DesktopPreviewShortcut,
+  ResolvedKeybindingsConfig,
   PreviewAnnotationPayload,
   PreviewAnnotationRect,
   PreviewAnnotationSubmissionResult,
@@ -35,6 +37,8 @@ import type {
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { resolveShortcutCommand } from "@t3tools/shared/keybindingMatching";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import {
@@ -66,7 +70,11 @@ import * as Scope from "effect/Scope";
 import * as SynchronizedRef from "effect/SynchronizedRef";
 
 import * as DesktopEnvironment from "../app/DesktopEnvironment.ts";
-import { PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL } from "../ipc/channels.ts";
+import {
+  MENU_ACTION_CHANNEL,
+  PREVIEW_PICTURE_IN_PICTURE_FRAME_CHANNEL,
+  PREVIEW_SHORTCUT_CHANNEL,
+} from "../ipc/channels.ts";
 import * as BrowserSession from "./BrowserSession.ts";
 import {
   ANNOTATION_CAPTURED_CHANNEL,
@@ -562,13 +570,6 @@ export const previewWindowOpenAction = (details: {
 }): "popup" | "navigate" =>
   details.disposition === "new-window" && isPopupUrl(details.url) ? "popup" : "navigate";
 
-export const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
-  input.type === "keyDown" &&
-  input.key.toLowerCase() === "r" &&
-  (input.meta || input.control) &&
-  !input.shift &&
-  !input.alt;
-
 export const isPreviewEditingShortcut = (
   input: Electron.Input,
   platform: NodeJS.Platform,
@@ -647,6 +648,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const annotationThemeRef = yield* Ref.make(DEFAULT_ANNOTATION_THEME);
   const mainWindowRef = yield* Ref.make<Option.Option<BrowserWindow>>(Option.none());
+  const keybindingsRef = yield* Ref.make<ResolvedKeybindingsConfig>(DEFAULT_RESOLVED_KEYBINDINGS);
+  const setKeybindings = (keybindings: ResolvedKeybindingsConfig) =>
+    Ref.set(keybindingsRef, keybindings);
   const tabsRef = yield* SynchronizedRef.make<ReadonlyMap<string, PreviewTabState>>(new Map());
   const attachedRef = yield* Ref.make<ReadonlyMap<number, ManagedListeners>>(new Map());
   const listenersRef = yield* Ref.make<ReadonlySet<Listener>>(new Set());
@@ -1996,17 +2000,68 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         syncMenuShortcuts(window.webContents, input);
       });
     };
+    const forwardedKeys = new Set<string>();
+    let forwardedModifiers = false;
+    let altGraphPressed = false;
+    const resetAltGraph = () => {
+      altGraphPressed = false;
+    };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
+      if (input.key === "AltGraph") altGraphPressed = input.type !== "keyUp";
       syncMenuShortcuts(wc, input);
-      if (isPreviewRefreshShortcut(input)) {
-        event.preventDefault();
-        runFork(
-          attempt({ operation: "shortcut.refresh", tabId, webContentsId: wc.id }, () =>
-            wc.reload(),
-          ).pipe(Effect.ignore),
-        );
+      const mainWindow = Ref.getUnsafe(mainWindowRef);
+      if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed() || input.isComposing) return;
+      const shortcut: DesktopPreviewShortcut = {
+        tabId,
+        type: input.type === "keyUp" ? "keyup" : "keydown",
+        key: input.key,
+        code: input.code,
+        metaKey: input.meta,
+        ctrlKey: input.control,
+        shiftKey: input.shift,
+        altKey: input.alt,
+        repeat: input.isAutoRepeat,
+        isComposing: input.isComposing,
+        altGraphKey: altGraphPressed,
+      };
+      if (input.type === "keyUp") {
+        const forwarded = forwardedKeys.delete(input.code);
+        const modifierRelease =
+          forwardedModifiers &&
+          ["Meta", "Control", "Alt", "AltGraph", "Shift", "OS"].includes(input.key);
+        if (!forwarded && !modifierRelease) return;
+        if (!input.meta && !input.control && !input.alt && !input.shift) forwardedModifiers = false;
+        mainWindow.value.webContents.send(PREVIEW_SHORTCUT_CHANNEL, shortcut);
         return;
       }
+      // Guest editing belongs to the page, including Undo rather than thread undo.
+      if (input.type !== "keyDown" || isPreviewEditingShortcut(input, hostPlatform)) return;
+      const command = resolveShortcutCommand(
+        { ...shortcut, getModifierState: () => altGraphPressed },
+        Ref.getUnsafe(keybindingsRef),
+        {
+          platform: hostPlatform,
+          context: { previewFocus: true, previewOpen: true, isWeb: false, isDesktop: true },
+        },
+      );
+      const settingsShortcut =
+        input.key === "," &&
+        !input.alt &&
+        !input.shift &&
+        (hostPlatform === "darwin" ? input.meta && !input.control : input.control && !input.meta);
+      if (!command && !settingsShortcut) return;
+      // Prevent before Chromium and the application menu can consume the guest key.
+      event.preventDefault();
+      if (!command && settingsShortcut) {
+        if (!input.isAutoRepeat)
+          mainWindow.value.webContents.send(MENU_ACTION_CHANNEL, "open-settings");
+        return;
+      }
+      forwardedKeys.add(input.code);
+      forwardedModifiers = input.meta || input.control || input.alt || input.shift;
+      // Keep the physical key and repeat state; dispatching to the guest again
+      // would trigger native menu accelerators a second time.
+      mainWindow.value.webContents.send(PREVIEW_SHORTCUT_CHANNEL, shortcut);
     };
     yield* Scope.addFinalizer(
       scope,
@@ -2024,6 +2079,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("audio-state-changed", audioStateChanged);
         wc.off("did-create-window", windowCreated);
         wc.off("before-input-event", beforeInput);
+        wc.off("blur", resetAltGraph);
         wc.ipc.off(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.off(RECORDING_INPUT_CHANNEL, recordingInput);
         wc.ipc.off(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
@@ -2060,6 +2116,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         });
         wc.on("did-create-window", windowCreated);
         wc.on("before-input-event", beforeInput);
+        wc.on("blur", resetAltGraph);
       });
       yield* Ref.update(attachedRef, (attached) =>
         replaceMap(attached, (copy) => {
@@ -4638,6 +4695,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     setAudioMuted,
     setColorScheme,
     setMainWindow,
+    setKeybindings,
     startRecording,
     closePictureInPicture,
     stopRecording,
@@ -4948,6 +5006,7 @@ const isPreviewAutomationInvalidSelectorError = Schema.is(PreviewAutomationInval
 export class PreviewManager extends Context.Service<
   PreviewManager,
   {
+    readonly setKeybindings: (keybindings: ResolvedKeybindingsConfig) => Effect.Effect<void>;
     readonly setMainWindow: (window: BrowserWindow) => Effect.Effect<void, PreviewManagerError>;
     readonly getBrowserSession: (
       scope?: string,
@@ -5072,6 +5131,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
   );
 
   return PreviewManager.of({
+    setKeybindings: operations.setKeybindings,
     setMainWindow: operations.setMainWindow,
     getBrowserSession: Effect.fn("PreviewManager.getBrowserSession")(
       function* (scope, persistent, namespace) {

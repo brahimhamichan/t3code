@@ -1032,6 +1032,59 @@ describe("resolveShortcutCommand", () => {
   });
 });
 
+describe.each(["MacIntel", "Linux", "Win32"])("preview shortcuts on %s", (platform) => {
+  it.each([
+    ["Cmd+T", event({ key: "t", metaKey: true }), "preview.newTab"],
+    ["Cmd+W", event({ key: "w", metaKey: true }), "preview.closeTab"],
+    ["Ctrl+Tab", event({ key: "Tab", ctrlKey: true }), "preview.nextTab"],
+    ["Ctrl+Shift+Tab", event({ key: "Tab", ctrlKey: true, shiftKey: true }), "preview.previousTab"],
+    ["Cmd+[", event({ key: "[", metaKey: true }), "preview.goBack"],
+    ["Cmd+]", event({ key: "]", metaKey: true }), "preview.goForward"],
+    ["Cmd+R", event({ key: "r", metaKey: true }), "preview.refresh"],
+    ["Cmd+Shift+R", event({ key: "r", metaKey: true, shiftKey: true }), "preview.hardRefresh"],
+    ["Cmd+L", event({ key: "l", metaKey: true }), "preview.focusUrl"],
+    [
+      "Shifted plus",
+      event({ key: "+", code: "Equal", metaKey: true, shiftKey: true }),
+      "preview.zoomIn",
+    ],
+  ] as const)("resolves %s in its desktop focus scope", (_label, keyEvent, command) => {
+    const platformEvent =
+      platform === "MacIntel"
+        ? keyEvent
+        : { ...keyEvent, metaKey: false, ctrlKey: keyEvent.metaKey || keyEvent.ctrlKey };
+    assert.strictEqual(
+      resolveShortcutCommand(platformEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform,
+        context: { previewFocus: true, isDesktop: true },
+      }),
+      command,
+    );
+    const outsidePreview: Partial<Record<KeybindingCommand, KeybindingCommand>> = {
+      "preview.newTab": "preview.newTab",
+      "preview.closeTab": "rightPanel.close",
+      "preview.goBack": "navigation.back",
+      "preview.goForward": "navigation.forward",
+    };
+    assert.strictEqual(
+      resolveShortcutCommand(platformEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform,
+        context: { previewFocus: false, isDesktop: true },
+      }),
+      outsidePreview[command] ?? null,
+    );
+  });
+  it("leaves the web browser's new-tab shortcut alone", () => {
+    assert.isNull(
+      resolveShortcutCommand(
+        event({ key: "t", metaKey: platform === "MacIntel", ctrlKey: platform !== "MacIntel" }),
+        DEFAULT_RESOLVED_KEYBINDINGS,
+        { platform, context: { isDesktop: false, isWeb: true } },
+      ),
+    );
+  });
+});
+
 describe("formatShortcutLabel", () => {
   it("formats labels for macOS", () => {
     assert.strictEqual(

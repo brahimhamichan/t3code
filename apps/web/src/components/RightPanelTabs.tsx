@@ -1100,6 +1100,9 @@ export function RightPanelTabs(props: RightPanelTabsProps) {
 
   return (
     <PreviewPanelShell
+      previewActive={
+        props.surfaces.find((surface) => surface.id === props.activeSurfaceId)?.kind === "preview"
+      }
       mode={props.mode}
       {...(props.maximized !== undefined ? { maximized: props.maximized } : {})}
       {...(props.open !== undefined ? { open: props.open } : {})}
