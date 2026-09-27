@@ -22,6 +22,7 @@ import {
   DesktopPreviewWebviewConfigSchema,
   PreviewAnnotationSubmissionResultSchema,
   PreviewAutomationSnapshot,
+  ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
@@ -47,6 +48,16 @@ export const installPreviewEventForwarding = Effect.fn(
   yield* manager.subscribePointerEvents((event) =>
     electronWindow.sendAll(IpcChannels.PREVIEW_POINTER_EVENT_CHANNEL, event),
   );
+});
+
+export const setKeybindings = DesktopIpc.makeIpcMethod({
+  channel: IpcChannels.PREVIEW_SET_KEYBINDINGS_CHANNEL,
+  payload: ResolvedKeybindingsConfig,
+  result: Schema.Void,
+  handler: Effect.fn("desktop.ipc.preview.setKeybindings")(function* (keybindings) {
+    const manager = yield* PreviewManager.PreviewManager;
+    yield* manager.setKeybindings(keybindings);
+  }),
 });
 
 export const createTab = DesktopIpc.makeIpcMethod({
@@ -375,6 +386,7 @@ export const saveRecording = DesktopIpc.makeIpcMethod({
 });
 
 export const methods = [
+  setKeybindings,
   createTab,
   closeTab,
   registerWebview,

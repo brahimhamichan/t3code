@@ -1,3 +1,4 @@
+import type { ResolvedKeybindingsConfig } from "./keybindings.ts";
 import type {
   VcsCreateRefInput,
   VcsCreateRefResult,
@@ -1173,7 +1174,23 @@ export interface DesktopBridge {
   preview?: DesktopPreviewBridge;
 }
 
+/** Keyboard input forwarded from a focused preview guest to the app renderer. */
+export interface DesktopPreviewShortcut {
+  readonly tabId: string;
+  readonly type: "keydown" | "keyup";
+  readonly key: string;
+  readonly code: string;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+  readonly repeat: boolean;
+  readonly isComposing: boolean;
+}
+
 export interface DesktopPreviewBridge {
+  setKeybindings?: (keybindings: ResolvedKeybindingsConfig) => Promise<void>;
+  onShortcut?: (listener: (input: DesktopPreviewShortcut) => void) => () => void;
   createTab: (tabId: string, defaults?: DesktopPreviewTabDefaults) => Promise<void>;
   closeTab: (tabId: string) => Promise<void>;
   registerWebview: (tabId: string, webContentsId: number) => Promise<void>;

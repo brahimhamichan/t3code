@@ -52,6 +52,7 @@ export function getPreviewPanelMaxWidth(viewportWidth: number, containerWidth?: 
 export function PreviewPanelShell(props: {
   mode: PreviewPanelMode;
   maximized?: boolean;
+  previewActive?: boolean;
   /**
    * Overrides the localStorage key used to persist the panel width. Callers
    * embedding this shell for a different surface (e.g. the pull requests
@@ -80,6 +81,7 @@ export function PreviewPanelShell(props: {
   return (
     <div
       ref={hostRef}
+      tabIndex={props.previewActive ? -1 : undefined}
       className={cn(
         "relative flex h-full min-h-0 min-w-0 max-w-full flex-col self-stretch bg-background",
         isInline
@@ -90,6 +92,7 @@ export function PreviewPanelShell(props: {
       )}
       style={isInline && !props.maximized ? { width: `${width}px` } : undefined}
       data-preview-panel-mode={props.mode}
+      data-preview-active={props.previewActive ? "true" : undefined}
       data-preview-panel-maximized={props.maximized ? "true" : "false"}
     >
       {isInline && !props.maximized ? <RightPanelResizeHandle handlers={handlers} /> : null}

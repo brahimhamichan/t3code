@@ -11,6 +11,8 @@ import type {
   DesktopPreviewColorScheme,
   DesktopPreviewFavicon,
   DesktopPreviewPointerEvent,
+  DesktopPreviewShortcut,
+  ResolvedKeybindingsConfig,
   PreviewAnnotationPayload,
   PreviewAnnotationRect,
   PreviewAnnotationSubmissionResult,
@@ -30,6 +32,9 @@ import type {
   PreviewAutomationTypeInput,
   PreviewAutomationWaitForInput,
 } from "@t3tools/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { resolveShortcutCommand } from "@t3tools/shared/keybindingMatching";
+import { PREVIEW_SHORTCUT_CHANNEL, MENU_ACTION_CHANNEL } from "../ipc/channels.ts";
 import { HostProcessPlatform } from "@t3tools/shared/hostProcess";
 import { normalizePreviewUrl } from "@t3tools/shared/preview";
 import { BrowserWindow, type Session, clipboard, nativeImage, shell, webContents } from "electron";
@@ -428,22 +433,6 @@ interface ExpectedAgentInput {
   readonly expiresAt: number;
 }
 
-const APP_FORWARDED_SHORTCUTS: ReadonlyArray<{
-  key: string;
-  meta: boolean;
-  shift: boolean;
-  control: boolean;
-}> = Object.freeze([
-  // mod+shift+J → preview.toggle
-  { key: "j", meta: true, shift: true, control: false },
-  // mod+K → command palette
-  { key: "k", meta: true, shift: false, control: false },
-  // mod+, → settings (macOS convention)
-  { key: ",", meta: true, shift: false, control: false },
-  // mod+W → close tab/panel
-  { key: "w", meta: true, shift: false, control: false },
-]);
-
 /**
  * Protocols a preview page may open in a real popup window.
  *
@@ -498,13 +487,6 @@ export const previewWindowOpenAction = (details: {
   readonly disposition: Electron.HandlerDetails["disposition"];
 }): "popup" | "navigate" =>
   details.disposition === "new-window" && isPopupUrl(details.url) ? "popup" : "navigate";
-
-export const isPreviewRefreshShortcut = (input: Electron.Input): boolean =>
-  input.type === "keyDown" &&
-  input.key.toLowerCase() === "r" &&
-  (input.meta || input.control) &&
-  !input.shift &&
-  !input.alt;
 
 const isPreviewInputSignal = (value: unknown): value is PreviewInputSignal => {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
@@ -561,6 +543,9 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
 
   const annotationThemeRef = yield* Ref.make(DEFAULT_ANNOTATION_THEME);
   const mainWindowRef = yield* Ref.make<Option.Option<BrowserWindow>>(Option.none());
+  const keybindingsRef = yield* Ref.make<ResolvedKeybindingsConfig>(DEFAULT_RESOLVED_KEYBINDINGS);
+  const setKeybindings = (keybindings: ResolvedKeybindingsConfig) =>
+    Ref.set(keybindingsRef, keybindings);
   const tabsRef = yield* SynchronizedRef.make<ReadonlyMap<string, PreviewTabState>>(new Map());
   const attachedRef = yield* Ref.make<ReadonlyMap<number, ManagedListeners>>(new Map());
   const listenersRef = yield* Ref.make<ReadonlySet<Listener>>(new Set());
@@ -1428,16 +1413,6 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     }
   });
 
-  const isAppShortcut = (input: Electron.Input): boolean =>
-    input.type === "keyDown" &&
-    APP_FORWARDED_SHORTCUTS.some(
-      (shortcut) =>
-        shortcut.key.toLowerCase() === input.key.toLowerCase() &&
-        shortcut.meta === input.meta &&
-        shortcut.shift === input.shift &&
-        shortcut.control === input.control,
-    );
-
   const computeNavStatus = (wc: Electron.WebContents): PreviewNavStatus => {
     const url = wc.getURL();
     const title = wc.getTitle();
@@ -1712,43 +1687,60 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         }).pipe(Effect.ignore),
       );
     };
-    const forwardShortcut = Effect.fn("PreviewManager.forwardShortcut")(function* (
-      event: Electron.Event,
-      input: Electron.Input,
-    ) {
-      const mainWindow = yield* Ref.get(mainWindowRef);
-      if (!isAppShortcut(input) || Option.isNone(mainWindow) || mainWindow.value.isDestroyed()) {
-        return;
-      }
-      event.preventDefault();
-      mainWindow.value.webContents.sendInputEvent({
-        type: "keyDown",
-        keyCode: input.key,
-        modifiers: [
-          ...(input.meta ? (["meta"] as const) : []),
-          ...(input.shift ? (["shift"] as const) : []),
-          ...(input.control ? (["control"] as const) : []),
-          ...(input.alt ? (["alt"] as const) : []),
-        ],
-      });
-    });
     // A popup opens with Electron's default handler, so the page inside it could
     // otherwise spawn native windows without limit. Nothing in an OAuth flow
     // opens a second popup, so the chain stops at the first one.
     const windowCreated = (window: Electron.BrowserWindow): void => {
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     };
+    const forwardedKeys = new Set<string>();
+    let forwardedModifiers = false;
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
-      if (isPreviewRefreshShortcut(input)) {
-        event.preventDefault();
-        runFork(
-          attempt({ operation: "shortcut.refresh", tabId, webContentsId: wc.id }, () =>
-            wc.reload(),
-          ).pipe(Effect.ignore),
-        );
+      const mainWindow = Ref.getUnsafe(mainWindowRef);
+      if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed() || input.isComposing) return;
+      const shortcut: DesktopPreviewShortcut = {
+        tabId,
+        type: input.type === "keyUp" ? "keyup" : "keydown",
+        key: input.key,
+        code: input.code,
+        metaKey: input.meta,
+        ctrlKey: input.control,
+        shiftKey: input.shift,
+        altKey: input.alt,
+        repeat: input.isAutoRepeat,
+        isComposing: input.isComposing,
+      };
+      if (input.type === "keyUp") {
+        const forwarded = forwardedKeys.delete(input.code);
+        const modifierRelease =
+          forwardedModifiers && ["Meta", "Control", "Alt", "Shift", "OS"].includes(input.key);
+        if (!forwarded && !modifierRelease) return;
+        if (!input.meta && !input.control && !input.alt && !input.shift) forwardedModifiers = false;
+        mainWindow.value.webContents.send(PREVIEW_SHORTCUT_CHANNEL, shortcut);
         return;
       }
-      runFork(forwardShortcut(event, input));
+      const command = resolveShortcutCommand(shortcut, Ref.getUnsafe(keybindingsRef), {
+        platform: hostPlatform,
+        context: { previewFocus: true, previewOpen: true },
+      });
+      const settingsShortcut =
+        input.key === "," &&
+        !input.alt &&
+        !input.shift &&
+        (hostPlatform === "darwin" ? input.meta && !input.control : input.control && !input.meta);
+      if (!command && !settingsShortcut) return;
+      // Electron needs synchronous cancellation, before guest and menu dispatch.
+      event.preventDefault();
+      if (!command && settingsShortcut) {
+        if (!input.isAutoRepeat)
+          mainWindow.value.webContents.send(MENU_ACTION_CHANNEL, "open-settings");
+        return;
+      }
+      forwardedKeys.add(input.code);
+      forwardedModifiers = input.meta || input.control || input.alt || input.shift;
+      // IPC preserves the physical key and repeat flag without running native
+      // menu accelerators a second time or sending the event back into the guest.
+      mainWindow.value.webContents.send(PREVIEW_SHORTCUT_CHANNEL, shortcut);
     };
     yield* Scope.addFinalizer(
       scope,
@@ -3931,6 +3923,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     setAudioMuted,
     setColorScheme,
     setMainWindow,
+    setKeybindings,
     startRecording,
     closePictureInPicture,
     stopRecording,
@@ -4225,6 +4218,7 @@ export const isPreviewAutomationInvalidSelectorError = Schema.is(
 export class PreviewManager extends Context.Service<
   PreviewManager,
   {
+    readonly setKeybindings: (keybindings: ResolvedKeybindingsConfig) => Effect.Effect<void>;
     readonly setMainWindow: (window: BrowserWindow) => Effect.Effect<void, PreviewManagerError>;
     readonly getBrowserSession: (scope?: string) => Effect.Effect<Session, PreviewManagerError>;
     readonly isBrowserPartition: (partition: string) => boolean;
@@ -4333,6 +4327,7 @@ export const make = Effect.gen(function* PreviewManagerMake() {
 
   return PreviewManager.of({
     setMainWindow: operations.setMainWindow,
+    setKeybindings: operations.setKeybindings,
     getBrowserSession: Effect.fn("PreviewManager.getBrowserSession")(function* (scope) {
       return yield* browserSession
         .getSession(scope)
