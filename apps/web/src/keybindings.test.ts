@@ -6,6 +6,7 @@ import {
   type KeybindingWhenNode,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   formatShortcutLabel,
   isChatNewShortcut,
@@ -796,6 +797,34 @@ describe("resolveShortcutCommand", () => {
         platform: "MacIntel",
       }),
       "diff.toggle",
+    );
+  });
+});
+
+describe("preview shortcuts", () => {
+  it.each([
+    ["Cmd+T", event({ key: "t", metaKey: true }), "preview.newTab"],
+    ["Cmd+W", event({ key: "w", metaKey: true }), "preview.closeTab"],
+    ["Ctrl+Tab", event({ key: "Tab", ctrlKey: true }), "preview.nextTab"],
+    ["Ctrl+Shift+Tab", event({ key: "Tab", ctrlKey: true, shiftKey: true }), "preview.previousTab"],
+    ["Cmd+[", event({ key: "[", metaKey: true }), "preview.goBack"],
+    ["Cmd+]", event({ key: "]", metaKey: true }), "preview.goForward"],
+    ["Cmd+R", event({ key: "r", metaKey: true }), "preview.refresh"],
+    ["Cmd+Shift+R", event({ key: "r", metaKey: true, shiftKey: true }), "preview.hardRefresh"],
+    ["Cmd+L", event({ key: "l", metaKey: true }), "preview.focusUrl"],
+  ] as const)("resolves %s only while preview owns focus", (_label, keyEvent, command) => {
+    assert.strictEqual(
+      resolveShortcutCommand(keyEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { previewFocus: true },
+      }),
+      command,
+    );
+    assert.isNull(
+      resolveShortcutCommand(keyEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform: "MacIntel",
+        context: { previewFocus: false },
+      }),
     );
   });
 });

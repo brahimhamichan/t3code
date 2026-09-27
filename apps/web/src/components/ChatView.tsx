@@ -161,6 +161,7 @@ import { addBrowserSurface } from "./preview/addBrowserSurface";
 import { closePreviewSession } from "./preview/closePreviewSession";
 import { ThreadPreviewMiniPlayer } from "./preview/ThreadPreviewMiniPlayer";
 import { subscribePreviewAction } from "./preview/previewActionBus";
+import { adjacentPreviewSurface } from "./preview/previewTabNavigation";
 import { getConfiguredPreviewUrls } from "./preview/previewEmptyStateLogic";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import {
@@ -3821,6 +3822,18 @@ function ChatViewContent(props: ChatViewProps) {
     },
     [activeThreadRef, diffOpen, onDiffPanelOpen],
   );
+  const cyclePreviewSurface = useCallback(
+    (direction: "next" | "previous") => {
+      if (!activeThreadRef || activeRightPanelSurface?.kind !== "preview") return;
+      const nextSurface = adjacentPreviewSurface(
+        rightPanelState.surfaces,
+        activeRightPanelSurface.id,
+        direction,
+      );
+      if (nextSurface) activateRightPanelSurface(nextSurface);
+    },
+    [activeRightPanelSurface, activeThreadRef, activateRightPanelSurface, rightPanelState.surfaces],
+  );
   const toggleRightPanel = useCallback(() => {
     if (!activeThreadRef) return;
     if (rightPanelOpen) {
@@ -3978,9 +3991,42 @@ function ChatViewContent(props: ChatViewProps) {
   useEffect(
     () =>
       subscribePreviewAction((action) => {
-        if (action === "toggle-panel") togglePreviewPanel();
+        switch (action) {
+          case "toggle-panel":
+            togglePreviewPanel();
+            return;
+          case "new-tab":
+            createBrowserSurface();
+            return;
+          case "close-tab":
+            if (activeRightPanelSurface?.kind === "preview") {
+              closeRightPanelSurface(activeRightPanelSurface);
+            }
+            return;
+          case "next-tab":
+            cyclePreviewSurface("next");
+            return;
+          case "previous-tab":
+            cyclePreviewSurface("previous");
+            return;
+          case "go-back":
+          case "go-forward":
+          case "refresh":
+          case "hard-refresh":
+          case "focus-url":
+          case "zoom-in":
+          case "zoom-out":
+          case "reset-zoom":
+            return;
+        }
       }),
-    [togglePreviewPanel],
+    [
+      activeRightPanelSurface,
+      closeRightPanelSurface,
+      createBrowserSurface,
+      cyclePreviewSurface,
+      togglePreviewPanel,
+    ],
   );
   const persistThreadSettingsForNextTurn = useCallback(
     async (input: {

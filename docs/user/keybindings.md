@@ -52,6 +52,11 @@ successful pick; its hover glow and badge preview the element and color family t
 `rightPanel.toggleMaximized` maximizes or restores the open right panel. It has no default shortcut,
 so add one in **Settings** → **Keybindings** if you want to use it.
 
+When the preview owns focus, `preview.newTab` opens a blank browser tab with `mod+t`, and
+`preview.closeTab` closes the active browser tab with `mod+w`. Use `ctrl+tab` and `ctrl+shift+tab`
+to move between preview tabs, `mod+[` and `mod+]` to go back and forward, `mod+r` to refresh, and
+`mod+shift+r` to hard refresh. `mod+l` focuses and selects the URL field.
+
 `thread.settle` settles the active thread or restores it when it is already settled. Its default
 shortcut is `mod+shift+s`, and it does not run while the terminal has focus.
 

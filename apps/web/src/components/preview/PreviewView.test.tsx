@@ -33,6 +33,7 @@ const mocks = vi.hoisted(() => ({
   showEmptyState: false,
   loading: false,
   recordVisitForThread: vi.fn(),
+  focusUrlNonce: undefined as number | undefined,
 }));
 
 const EMPTY_HISTORY: never[] = [];
@@ -212,6 +213,7 @@ vi.mock("./previewBridge", () => ({
 
 vi.mock("./PreviewChromeRow", () => ({
   PreviewChromeRow: (props: {
+    focusUrlNonce?: number;
     onSubmit: (url: string) => void;
     onPickElement?: () => void;
     onPictureInPicture?: () => void;
@@ -220,6 +222,7 @@ vi.mock("./PreviewChromeRow", () => ({
       props: { onNativePictureInPicture?: () => void };
     };
   }) => {
+    mocks.focusUrlNonce = props.focusUrlNonce;
     mocks.submittedUrl = props.onSubmit;
     mocks.toggleAnnotation = props.onPickElement ?? null;
     mocks.togglePictureInPicture = props.onPictureInPicture ?? null;
@@ -344,6 +347,7 @@ describe("PreviewView navigation", () => {
     mocks.showEmptyState = false;
     mocks.loading = false;
     mocks.recordVisitForThread.mockClear();
+    mocks.focusUrlNonce = undefined;
   });
 
   it("does not rerender while loading time passes", async () => {
@@ -370,6 +374,45 @@ describe("PreviewView navigation", () => {
     } finally {
       await act(() => root.unmount());
       vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("requests URL focus when a visible blank preview tab opens", async () => {
+    mocks.showEmptyState = true;
+    const document = installTestDom();
+    const { createRoot } = await import("react-dom/client");
+    const root = createRoot(document.createElement("div") as unknown as Element);
+
+    try {
+      await act(() => {
+        root.render(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />);
+      });
+
+      expect(mocks.focusUrlNonce).toBe(1);
+    } finally {
+      await act(() => root.unmount());
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("requests URL focus when the selected visible preview tab changes", async () => {
+    const document = installTestDom();
+    const { createRoot } = await import("react-dom/client");
+    const root = createRoot(document.createElement("div") as unknown as Element);
+
+    try {
+      await act(() => {
+        root.render(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-1" visible />);
+      });
+      expect(mocks.focusUrlNonce).toBe(1);
+
+      await act(() => {
+        root.render(<PreviewView threadRef={TEST_THREAD_REF} tabId="tab-2" visible />);
+      });
+      expect(mocks.focusUrlNonce).toBe(2);
+    } finally {
+      await act(() => root.unmount());
       vi.unstubAllGlobals();
     }
   });
