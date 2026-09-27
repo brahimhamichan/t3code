@@ -1033,7 +1033,7 @@ describe("resolveShortcutCommand", () => {
   });
 });
 
-describe("preview shortcuts", () => {
+describe.each(["MacIntel", "Linux", "Win32"])("preview shortcuts on %s", (platform) => {
   it.each([
     ["Cmd+T", event({ key: "t", metaKey: true }), "preview.newTab"],
     ["Cmd+W", event({ key: "w", metaKey: true }), "preview.closeTab"],
@@ -1044,17 +1044,26 @@ describe("preview shortcuts", () => {
     ["Cmd+R", event({ key: "r", metaKey: true }), "preview.refresh"],
     ["Cmd+Shift+R", event({ key: "r", metaKey: true, shiftKey: true }), "preview.hardRefresh"],
     ["Cmd+L", event({ key: "l", metaKey: true }), "preview.focusUrl"],
+    [
+      "Shifted plus",
+      event({ key: "+", code: "Equal", metaKey: true, shiftKey: true }),
+      "preview.zoomIn",
+    ],
   ] as const)("resolves %s only while preview owns focus", (_label, keyEvent, command) => {
+    const platformEvent =
+      platform === "MacIntel"
+        ? keyEvent
+        : { ...keyEvent, metaKey: false, ctrlKey: keyEvent.metaKey || keyEvent.ctrlKey };
     assert.strictEqual(
-      resolveShortcutCommand(keyEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
-        platform: "MacIntel",
+      resolveShortcutCommand(platformEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform,
         context: { previewFocus: true },
       }),
       command,
     );
     assert.isNull(
-      resolveShortcutCommand(keyEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
-        platform: "MacIntel",
+      resolveShortcutCommand(platformEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
+        platform,
         context: { previewFocus: false },
       }),
     );

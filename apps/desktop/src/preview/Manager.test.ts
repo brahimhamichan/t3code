@@ -578,6 +578,11 @@ describe("PreviewManager", () => {
 
             for (const [key, code, shift] of [
               ["l", "KeyL", false],
+              ["t", "KeyT", false],
+              ["w", "KeyW", false],
+              ["[", "BracketLeft", false],
+              ["]", "BracketRight", false],
+              ["+", "Equal", true],
               ["r", "KeyR", false],
               ["=", "Equal", false],
               ["-", "Minus", false],
