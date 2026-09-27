@@ -1,6 +1,7 @@
 import { Outlet, createFileRoute, redirect, useParams } from "@tanstack/react-router";
 import { useAtomValue } from "@effect/atom-react";
 import { useEffect, useMemo } from "react";
+import type { KeybindingCommand } from "@t3tools/contracts";
 
 import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { ThreadRouteView } from "../components/ThreadRouteView";
@@ -12,6 +13,7 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { selectProjectGroupingSettings } from "../logicalProject";
 import { buildSidebarProjectSnapshots } from "../sidebarProjectGrouping";
 import { dispatchPreviewAction } from "../components/preview/previewActionBus";
+import type { PreviewAction } from "../components/preview/previewActionBus";
 import { useHandleNewThread } from "../hooks/useHandleNewThread";
 import { startNewThreadFromContext } from "../lib/chatThreadActions";
 import { isPreviewFocused } from "../lib/previewFocus";
@@ -26,6 +28,21 @@ import { selectActiveRightPanel, useRightPanelStore } from "../rightPanelStore";
 import { useThreadSelectionStore } from "../threadSelectionStore";
 import { stackedThreadToast, toastManager } from "~/components/ui/toast";
 import { primaryServerKeybindingsAtom } from "~/state/server";
+
+const PREVIEW_SHORTCUT_ACTIONS: Partial<Record<KeybindingCommand, PreviewAction>> = {
+  "preview.newTab": "new-tab",
+  "preview.closeTab": "close-tab",
+  "preview.nextTab": "next-tab",
+  "preview.previousTab": "previous-tab",
+  "preview.goBack": "go-back",
+  "preview.goForward": "go-forward",
+  "preview.refresh": "refresh",
+  "preview.hardRefresh": "hard-refresh",
+  "preview.focusUrl": "focus-url",
+  "preview.zoomIn": "zoom-in",
+  "preview.zoomOut": "zoom-out",
+  "preview.resetZoom": "reset-zoom",
+};
 
 function ChatRouteGlobalShortcuts() {
   const clearSelection = useThreadSelectionStore((state) => state.clearSelection);
@@ -142,29 +159,15 @@ function ChatRouteGlobalShortcuts() {
         return;
       }
 
-      // The remaining preview commands only fire when the panel is the
-      // currently-focused tenant. The `when: previewFocus` rule already
-      // gates this, but defend against the keybinding being misconfigured.
-      if (
-        command === "preview.refresh" ||
-        command === "preview.focusUrl" ||
-        command === "preview.zoomIn" ||
-        command === "preview.zoomOut" ||
-        command === "preview.resetZoom"
-      ) {
+      const previewAction = command ? PREVIEW_SHORTCUT_ACTIONS[command] : undefined;
+      if (previewAction) {
         event.preventDefault();
         event.stopPropagation();
-        const action =
-          command === "preview.refresh"
-            ? "refresh"
-            : command === "preview.focusUrl"
-              ? "focus-url"
-              : command === "preview.zoomIn"
-                ? "zoom-in"
-                : command === "preview.zoomOut"
-                  ? "zoom-out"
-                  : "reset-zoom";
-        dispatchPreviewAction(action);
+        if (event.repeat && (command === "preview.newTab" || command === "preview.closeTab")) {
+          return;
+        }
+        dispatchPreviewAction(previewAction);
+        return;
       }
     };
 

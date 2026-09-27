@@ -174,6 +174,11 @@ export function PreviewView({
     runtimeTabId ? (state.byTabId[runtimeTabId]?.rect ?? null) : null,
   );
 
+  useEffect(() => {
+    if (!visible) return;
+    setFocusUrlNonce((value) => (value ?? 0) + 1);
+  }, [tabId, visible]);
+
   const navUrl = navStatus._tag === "Success" ? navStatus.url : null;
   const navTitle = navStatus._tag === "Success" ? navStatus.title : null;
   const latestHistoryUrl = recentHistoryEntries[0]?.url;
@@ -239,6 +244,10 @@ export function PreviewView({
 
   const handleRefresh = useCallback(() => {
     if (previewBridge && runtimeTabId) void previewBridge.refresh(runtimeTabId);
+  }, [runtimeTabId]);
+
+  const handleHardRefresh = useCallback(() => {
+    if (previewBridge && runtimeTabId) void previewBridge.hardReload(runtimeTabId);
   }, [runtimeTabId]);
 
   const handleZoomIn = useCallback(() => {
@@ -684,8 +693,17 @@ export function PreviewView({
     if (!visible) return;
     return subscribePreviewAction((action) => {
       switch (action) {
+        case "go-back":
+          handleBack();
+          return;
+        case "go-forward":
+          handleForward();
+          return;
         case "refresh":
           handleRefresh();
+          return;
+        case "hard-refresh":
+          handleHardRefresh();
           return;
         case "focus-url":
           setFocusUrlNonce((value) => (value ?? 0) + 1);
@@ -700,10 +718,23 @@ export function PreviewView({
           handleResetZoom();
           return;
         case "toggle-panel":
+        case "new-tab":
+        case "close-tab":
+        case "next-tab":
+        case "previous-tab":
           return;
       }
     });
-  }, [handleRefresh, handleResetZoom, handleZoomIn, handleZoomOut, visible]);
+  }, [
+    handleBack,
+    handleForward,
+    handleHardRefresh,
+    handleRefresh,
+    handleResetZoom,
+    handleZoomIn,
+    handleZoomOut,
+    visible,
+  ]);
 
   return (
     <div
