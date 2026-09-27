@@ -1595,7 +1595,7 @@ function SavedBackendListRow({
           selfUpdate={resolveServerSelfUpdateCapability(environment.serverConfig)}
           desktopAppUpdate={supportsDesktopAppUpdate(environment.serverConfig)}
           threadContinuation={supportsServerUpdateThreadContinuation(environment.serverConfig)}
-          targetVersion={versionMismatch.clientVersion}
+          targetVersion={versionMismatch.updateTargetVersion}
           label={serverUpdateState.status === "failed" ? "Retry update" : "Update"}
           appearance="icon"
         />
@@ -1894,7 +1894,7 @@ export function ConnectionsSettings() {
             threadContinuation: supportsServerUpdateThreadContinuation(environment.serverConfig),
             continueThreadsAfterServerUpdate:
               environment.serverConfig?.settings.continueThreadsAfterServerUpdate ?? false,
-            targetVersion: mismatch.clientVersion,
+            targetVersion: mismatch.updateTargetVersion,
           },
         ];
       }),
@@ -3335,11 +3335,11 @@ export function ConnectionsSettings() {
                       threadContinuation={supportsServerUpdateThreadContinuation(
                         primaryServerConfig,
                       )}
-                      targetVersion={primaryVersionMismatch.clientVersion}
+                      targetVersion={primaryVersionMismatch.updateTargetVersion}
                       label={
                         primaryServerUpdateState.status === "failed"
                           ? "Retry update"
-                          : `Update to ${primaryVersionMismatch.clientVersion}`
+                          : `Update to ${primaryVersionMismatch.updateTargetVersion}`
                       }
                     />
                   ) : primaryServerUpdateState.status === "idle" && primaryServerConfig ? (

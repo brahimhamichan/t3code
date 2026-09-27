@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 // Pinned so the direction cases below read as fixed versions instead of
 // arithmetic on whatever version this checkout happens to be at.
-const branding = vi.hoisted(() => ({ APP_VERSION: "0.0.34" }));
+const branding = vi.hoisted(() => ({ APP_VERSION: "0.0.34", APP_SERVER_VERSION: "0.0.34" }));
 vi.mock("./branding", () => branding);
 
 import { APP_VERSION } from "./branding";
@@ -27,6 +27,7 @@ const MISMATCH_HINT =
 describe("versionSkew", () => {
   beforeEach(() => {
     branding.APP_VERSION = "0.0.34";
+    branding.APP_SERVER_VERSION = "0.0.34";
   });
 
   it("dismisses only the current failed attempt without clearing its retry state", () => {
@@ -69,6 +70,7 @@ describe("versionSkew", () => {
   it("returns a mismatch when the server is behind the client", () => {
     expect(resolveVersionMismatch("0.0.33")).toEqual({
       clientVersion: "0.0.34",
+      updateTargetVersion: "0.0.34",
       serverVersion: "0.0.33",
       hint: MISMATCH_HINT,
     });
@@ -77,6 +79,21 @@ describe("versionSkew", () => {
   it("does not warn when the server is ahead of the client", () => {
     expect(resolveVersionMismatch("0.0.35")).toBeNull();
     expect(resolveVersionMismatch("9.9.9")).toBeNull();
+  });
+
+  it("uses the published server version for custom client builds", () => {
+    branding.APP_VERSION = "0.0.34-nightly.20260824.1125.shortcuts.2";
+    branding.APP_SERVER_VERSION = "0.0.34-nightly.20260824.1125";
+
+    expect(resolveVersionMismatch("0.0.34-nightly.20260824.1125")).toBeNull();
+    expect(resolveVersionMismatch("0.0.34-nightly.20260824.1125.shortcuts.2")).toBeNull();
+    expect(resolveVersionMismatch("0.0.34-nightly.20260824.1126")).toBeNull();
+    expect(resolveVersionMismatch("0.0.34-nightly.20260824.1124")).toEqual({
+      clientVersion: "0.0.34-nightly.20260824.1125.shortcuts.2",
+      updateTargetVersion: "0.0.34-nightly.20260824.1125",
+      serverVersion: "0.0.34-nightly.20260824.1124",
+      hint: MISMATCH_HINT,
+    });
   });
 
   it("does not warn when a nightly and a stable build share a core version", () => {
@@ -90,9 +107,11 @@ describe("versionSkew", () => {
     "warns when nightly server %s is behind a nightly client on the same release",
     (serverVersion) => {
       branding.APP_VERSION = "0.0.34-nightly.20260824.1125";
+      branding.APP_SERVER_VERSION = "0.0.34-nightly.20260824.1125";
 
       expect(resolveVersionMismatch(serverVersion)).toEqual({
         clientVersion: "0.0.34-nightly.20260824.1125",
+        updateTargetVersion: "0.0.34-nightly.20260824.1125",
         serverVersion,
         hint: MISMATCH_HINT,
       });
@@ -111,9 +130,11 @@ describe("versionSkew", () => {
 
   it("still warns when a nightly client outruns the server by a release", () => {
     branding.APP_VERSION = "0.0.35-nightly.20260818.1124";
+    branding.APP_SERVER_VERSION = "0.0.35-nightly.20260818.1124";
 
     expect(resolveVersionMismatch("0.0.34")).toEqual({
       clientVersion: "0.0.35-nightly.20260818.1124",
+      updateTargetVersion: "0.0.35-nightly.20260818.1124",
       serverVersion: "0.0.34",
       hint: MISMATCH_HINT,
     });
@@ -122,13 +143,18 @@ describe("versionSkew", () => {
   it("falls back to string inequality when a version is not semver", () => {
     expect(resolveVersionMismatch("dev")).toEqual({
       clientVersion: "0.0.34",
+      updateTargetVersion: "0.0.34",
       serverVersion: "dev",
       hint: MISMATCH_HINT,
     });
 
     branding.APP_VERSION = "dev";
+    branding.APP_SERVER_VERSION = "dev";
     expect(resolveVersionMismatch("dev")).toBeNull();
-    expect(resolveVersionMismatch("0.0.34")).toMatchObject({ serverVersion: "0.0.34" });
+    expect(resolveVersionMismatch("0.0.34")).toMatchObject({
+      serverVersion: "0.0.34",
+      updateTargetVersion: "dev",
+    });
   });
 
   it("reads the server version from config descriptors", () => {
