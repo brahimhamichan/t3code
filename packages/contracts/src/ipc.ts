@@ -1271,6 +1271,7 @@ export interface DesktopPreviewShortcut {
   readonly altKey: boolean;
   readonly repeat: boolean;
   readonly isComposing: boolean;
+  readonly altGraphKey: boolean;
 }
 
 export interface DesktopPreviewBridge {

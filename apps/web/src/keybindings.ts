@@ -14,6 +14,7 @@ import {
   type ShortcutMatchContext,
   type ShortcutModifierStateLike,
   matchesShortcutModifiers,
+  normalizeEventKey,
   matchesWhenClause,
   resolveContext as resolveSharedContext,
   resolveEventKeys,

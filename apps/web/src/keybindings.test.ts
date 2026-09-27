@@ -11,7 +11,6 @@ import {
   type KeybindingWhenNode,
   type ResolvedKeybindingsConfig,
 } from "@t3tools/contracts";
-import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import {
   formatShortcutLabel,
   isDiffToggleShortcut,
@@ -1061,11 +1060,17 @@ describe.each(["MacIntel", "Linux", "Win32"])("preview shortcuts on %s", (platfo
       }),
       command,
     );
-    assert.isNull(
+    const outsidePreview: Partial<Record<KeybindingCommand, KeybindingCommand>> = {
+      "preview.closeTab": "rightPanel.close",
+      "preview.goBack": "navigation.back",
+      "preview.goForward": "navigation.forward",
+    };
+    assert.strictEqual(
       resolveShortcutCommand(platformEvent, DEFAULT_RESOLVED_KEYBINDINGS, {
         platform,
         context: { previewFocus: false },
       }),
+      outsidePreview[command] ?? null,
     );
   });
 });

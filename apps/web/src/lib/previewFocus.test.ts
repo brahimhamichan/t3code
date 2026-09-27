@@ -46,6 +46,7 @@ const shortcut: DesktopPreviewShortcut = {
   shiftKey: false,
   repeat: false,
   isComposing: false,
+  altGraphKey: false,
 };
 
 afterEach(() => vi.unstubAllGlobals());

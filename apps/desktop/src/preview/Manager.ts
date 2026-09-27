@@ -2002,7 +2002,12 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
     };
     const forwardedKeys = new Set<string>();
     let forwardedModifiers = false;
+    let altGraphPressed = false;
+    const resetAltGraph = () => {
+      altGraphPressed = false;
+    };
     const beforeInput = (event: Electron.Event, input: Electron.Input): void => {
+      if (input.key === "AltGraph") altGraphPressed = input.type !== "keyUp";
       syncMenuShortcuts(wc, input);
       const mainWindow = Ref.getUnsafe(mainWindowRef);
       if (Option.isNone(mainWindow) || mainWindow.value.isDestroyed() || input.isComposing) return;
@@ -2017,21 +2022,28 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         altKey: input.alt,
         repeat: input.isAutoRepeat,
         isComposing: input.isComposing,
+        altGraphKey: altGraphPressed,
       };
       if (input.type === "keyUp") {
         const forwarded = forwardedKeys.delete(input.code);
         const modifierRelease =
-          forwardedModifiers && ["Meta", "Control", "Alt", "Shift", "OS"].includes(input.key);
+          forwardedModifiers &&
+          ["Meta", "Control", "Alt", "AltGraph", "Shift", "OS"].includes(input.key);
         if (!forwarded && !modifierRelease) return;
         if (!input.meta && !input.control && !input.alt && !input.shift) forwardedModifiers = false;
         mainWindow.value.webContents.send(PREVIEW_SHORTCUT_CHANNEL, shortcut);
         return;
       }
-      if (input.type !== "keyDown") return;
-      const command = resolveShortcutCommand(shortcut, Ref.getUnsafe(keybindingsRef), {
-        platform: hostPlatform,
-        context: { previewFocus: true, previewOpen: true, isWeb: false, isDesktop: true },
-      });
+      // Guest editing belongs to the page, including Undo rather than thread undo.
+      if (input.type !== "keyDown" || isPreviewEditingShortcut(input, hostPlatform)) return;
+      const command = resolveShortcutCommand(
+        { ...shortcut, getModifierState: () => altGraphPressed },
+        Ref.getUnsafe(keybindingsRef),
+        {
+          platform: hostPlatform,
+          context: { previewFocus: true, previewOpen: true, isWeb: false, isDesktop: true },
+        },
+      );
       const settingsShortcut =
         input.key === "," &&
         !input.alt &&
@@ -2067,6 +2079,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         wc.off("audio-state-changed", audioStateChanged);
         wc.off("did-create-window", windowCreated);
         wc.off("before-input-event", beforeInput);
+        wc.off("blur", resetAltGraph);
         wc.ipc.off(HUMAN_INPUT_CHANNEL, humanInput);
         wc.ipc.off(RECORDING_INPUT_CHANNEL, recordingInput);
         wc.ipc.off(MOUSE_NAVIGATE_CHANNEL, mouseNavigate);
@@ -2103,6 +2116,7 @@ const makeNativeOperations = Effect.fn("PreviewManager.makeOperations")(function
         });
         wc.on("did-create-window", windowCreated);
         wc.on("before-input-event", beforeInput);
+        wc.on("blur", resetAltGraph);
       });
       yield* Ref.update(attachedRef, (attached) =>
         replaceMap(attached, (copy) => {

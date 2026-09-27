@@ -15,7 +15,9 @@ export function isPreviewFocused(): boolean {
 /** Delivers guest shortcuts through the same handlers as app chrome shortcuts. */
 export function dispatchPreviewShortcut(input: DesktopPreviewShortcut): void {
   if (input.type === "keyup") {
-    window.dispatchEvent(new KeyboardEvent("keyup", input));
+    window.dispatchEvent(
+      new KeyboardEvent("keyup", { ...input, modifierAltGraph: input.altGraphKey }),
+    );
     return;
   }
   const webview = Array.from(
@@ -23,7 +25,12 @@ export function dispatchPreviewShortcut(input: DesktopPreviewShortcut): void {
   ).find((node) => node.dataset.previewTab === input.tabId);
   // A delayed IPC message must not operate on a different thread or hidden tab.
   if (!webview || webview.getAttribute("aria-hidden") === "true") return;
-  const event = new KeyboardEvent(input.type, { ...input, bubbles: true, cancelable: true });
+  const event = new KeyboardEvent(input.type, {
+    ...input,
+    modifierAltGraph: input.altGraphKey,
+    bubbles: true,
+    cancelable: true,
+  });
   const previous = dispatchingPreviewShortcut;
   dispatchingPreviewShortcut = true;
   try {

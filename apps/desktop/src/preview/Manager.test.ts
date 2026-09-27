@@ -612,6 +612,7 @@ describe("PreviewManager", () => {
               { key: "v", code: "KeyV" },
               { key: "a", code: "KeyA" },
               { key: "x", code: "KeyX" },
+              { key: "z", code: "KeyZ" },
               { key: "q", code: "KeyQ" },
               { key: "l", alt: true },
               { key: "l", isComposing: true },
@@ -644,6 +645,14 @@ describe("PreviewManager", () => {
                 altKey: true,
               }),
             );
+            if (platform !== "darwin") {
+              press({ key: "AltGraph", code: "AltRight", alt: true });
+              send.mockClear();
+              expect(press({ key: "¥", code: "KeyY", alt: true })).not.toHaveBeenCalled();
+              expect(send).not.toHaveBeenCalled();
+              preview.listeners.get("blur")!();
+              expect(press({ key: "¥", code: "KeyY", alt: true })).toHaveBeenCalledOnce();
+            }
             expect(press({ key: "u", code: "KeyU" })).toHaveBeenCalledOnce();
             send.mockClear();
             expect(
