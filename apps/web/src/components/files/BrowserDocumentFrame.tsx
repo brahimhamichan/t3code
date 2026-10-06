@@ -56,6 +56,8 @@ export function BrowserDocumentFrame(props: {
       title={props.title}
       className={className}
       sandbox="allow-scripts allow-forms allow-popups"
+      allow="fullscreen"
+      allowFullScreen
     />
   );
 }
@@ -126,6 +128,8 @@ export function HtmlRenderDocument(props: {
       title={props.title}
       // Never allow-same-origin: the opaque origin keeps the page out of the app's session.
       sandbox="allow-scripts allow-forms"
+      allow="fullscreen"
+      allowFullScreen
       loading="lazy"
       onLoad={() => {
         setLoaded(true);
